@@ -117,6 +117,7 @@ const (
 	Not   // !
 	Recv  // <-
 	Tilde // ~
+	Pipe  // |>
 
 	// precOrOr
 	OrOr // ||

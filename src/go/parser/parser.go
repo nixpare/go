@@ -1868,8 +1868,173 @@ func (p *parser) parseBinaryExpr(x ast.Expr, prec1 int) ast.Expr {
 		}
 		pos := p.expect(op)
 		y := p.parseBinaryExpr(nil, oprec+1)
-		x = &ast.BinaryExpr{X: x, OpPos: pos, Op: op, Y: y}
+
+		if op == token.PIPE { // Handle Pipe operation ad-hoc
+			x = p.parsePipeExpr(x, y)
+		} else {
+			x = &ast.BinaryExpr{X: x, OpPos: pos, Op: op, Y: y}
+		}
 	}
+}
+
+func (p *parser) parsePipeExpr(x ast.Expr, y ast.Expr) ast.Expr {
+	var found bool
+	expr := y
+
+loop:
+	for {
+		switch e := expr.(type) {
+		case *ast.BinaryExpr:
+			for _, index := range []*ast.Expr{&e.X, &e.Y} {
+				if idx, ok := (*index).(*ast.Ident); ok && idx.Name == "_" {
+					if found {
+						p.error(idx.Pos(), "found multiple \"_\" argument in pipe")
+						p.advance(stmtStart)
+						break loop
+					}
+					
+					*index = x
+					found = true
+				}
+			}
+			break loop
+
+		case *ast.UnaryExpr:
+			if rhs, ok := e.X.(*ast.Ident); ok && rhs.Name == "_" {
+				if found {
+					p.error(rhs.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		case *ast.CallExpr:
+			for i, a := range e.Args {
+				if arg, ok := a.(*ast.Ident); ok && arg.Name == "_" {
+					if found {
+						p.error(arg.Pos(), "found multiple \"_\" argument in pipe")
+						p.advance(stmtStart)
+						break loop
+					}
+					
+					e.Args[i] = x
+					found = true
+				}
+			}
+			expr = e.Fun
+		
+		case *ast.ParenExpr:
+			if inner, ok := e.X.(*ast.Ident); ok && inner.Name == "_" {
+				if found {
+					p.error(inner.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		case *ast.SelectorExpr:
+			if lhs, ok := e.X.(*ast.Ident); ok && lhs.Name == "_" {
+				if found {
+					p.error(lhs.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		case *ast.StarExpr:
+			if rhs, ok := e.X.(*ast.Ident); ok && rhs.Name == "_" {
+				if found {
+					p.error(rhs.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		case *ast.IndexExpr:
+			if index, ok := e.Index.(*ast.Ident); ok && index.Name == "_" {
+				if found {
+					p.error(index.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.Index = x
+				found = true
+			}
+			expr = e.X
+
+		case *ast.SliceExpr:
+			for _, index := range []*ast.Expr{&e.Low, &e.High} {
+				if index == nil {
+					continue
+				}
+
+				if idx, ok := (*index).(*ast.Ident); ok && idx.Name == "_" {
+					if found {
+						p.error(idx.Pos(), "found multiple \"_\" argument in pipe")
+						p.advance(stmtStart)
+						break loop
+					}
+					
+					*index = x
+					found = true
+				}
+			}
+			expr = e.X
+
+		case *ast.Ellipsis:
+			if v, ok := e.Elt.(*ast.Ident); ok && v.Name == "_" {
+				if found {
+					p.error(v.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.Elt = x
+				found = true
+			}
+
+		case *ast.TypeAssertExpr:
+			if inner, ok := e.X.(*ast.Ident); ok && inner.Name == "_" {
+				if found {
+					p.error(inner.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(stmtStart)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		default:
+			// Probably a Lit or a Type, so should be the end
+			break loop
+		}
+	}
+
+	if !found {
+		p.error(expr.Pos(), "expected \"_\" argument in pipe")
+		p.advance(stmtStart)
+	}
+
+	return y
 }
 
 // The result may be a type or even a raw type ([...]int).

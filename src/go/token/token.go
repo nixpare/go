@@ -127,7 +127,8 @@ const (
 
 	additional_beg
 	// additional tokens, handled in an ad-hoc manner
-	TILDE
+	TILDE // ~
+	PIPE  // |>
 	additional_end
 )
 
@@ -231,6 +232,7 @@ var tokens = [...]string{
 	VAR:    "var",
 
 	TILDE: "~",
+	PIPE:  "|>",
 }
 
 // String returns the string corresponding to the token tok.
@@ -265,7 +267,7 @@ const (
 // is LowestPrecedence.
 func (op Token) Precedence() int {
 	switch op {
-	case LOR:
+	case LOR, PIPE:
 		return 1
 	case LAND:
 		return 2
@@ -305,7 +307,7 @@ func (tok Token) IsLiteral() bool { return literal_beg < tok && tok < literal_en
 // IsOperator returns true for tokens corresponding to operators and
 // delimiters; it returns false otherwise.
 func (tok Token) IsOperator() bool {
-	return (operator_beg < tok && tok < operator_end) || tok == TILDE
+	return (operator_beg < tok && tok < operator_end) || tok == TILDE || tok == PIPE
 }
 
 // IsKeyword returns true for tokens corresponding to keywords;

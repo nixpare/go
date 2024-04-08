@@ -271,7 +271,12 @@ redo:
 
 	case '|':
 		s.nextch()
-		if s.ch == '|' {
+		if s.ch == '>' {
+			s.nextch()
+			s.op, s.prec = Pipe, precOrOr
+			s.tok = _Operator
+			break
+		} else if s.ch == '|' {
 			s.nextch()
 			s.op, s.prec = OrOr, precOrOr
 			s.tok = _Operator

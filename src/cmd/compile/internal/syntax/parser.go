@@ -858,7 +858,12 @@ func (p *parser) binaryExpr(x Expr, prec int) Expr {
 		p.next()
 		t.X = x
 		t.Y = p.binaryExpr(nil, tprec)
-		x = t
+
+		if t.Op == Pipe {
+			x = p.parsePipeExpr(t.X, t.Y)
+		} else {
+			x = t
+		}
 	}
 	return x
 }
@@ -953,6 +958,140 @@ func (p *parser) unaryExpr() Expr {
 	// error for "(x) := true". It should be possible to detect
 	// and reject that more efficiently though.
 	return p.pexpr(nil, true)
+}
+
+func (p *parser) parsePipeExpr(x Expr, y Expr) Expr {
+	var found bool
+	expr := y
+
+loop:
+	for {
+		switch e := expr.(type) {
+		case *Operation:
+			for _, index := range []*Expr{&e.X, &e.Y} {
+				if idx, ok := (*index).(*Name); ok && idx.Value == "_" {
+					if found {
+						p.errorAt(idx.Pos(), "found multiple \"_\" argument in pipe")
+						p.advance(_Semi)
+						break loop
+					}
+					
+					*index = x
+					found = true
+				}
+			}
+			break loop
+
+		case *CallExpr:
+			for i, a := range e.ArgList {
+				if arg, ok := a.(*Name); ok && arg.Value == "_" {
+					if found {
+						p.errorAt(arg.Pos(), "found multiple \"_\" argument in pipe")
+						p.advance(_Semi)
+						break loop
+					}
+					
+					e.ArgList[i] = x
+					found = true
+				}
+			}
+			expr = e.Fun
+		
+		case *ParenExpr:
+			if inner, ok := e.X.(*Name); ok && inner.Value == "_" {
+				if found {
+					p.errorAt(inner.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(_Semi)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		case *SelectorExpr:
+			if lh, ok := e.X.(*Name); ok && lh.Value == "_" {
+				if found {
+					p.errorAt(lh.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(_Semi)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		case *IndexExpr:
+			if index, ok := e.Index.(*Name); ok && index.Value == "_" {
+				if found {
+					p.errorAt(index.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(_Semi)
+					break loop
+				}
+				
+				e.Index = x
+				found = true
+			}
+			expr = e.X
+
+		case *SliceExpr:
+			for i, index := range e.Index {
+				if index == nil {
+					continue
+				}
+
+				if idx, ok := index.(*Name); ok && idx.Value == "_" {
+					if found {
+						p.errorAt(idx.Pos(), "found multiple \"_\" argument in pipe")
+						p.advance(_Semi)
+						break loop
+					}
+					
+					e.Index[i] = x
+					found = true
+				}
+			}
+			expr = e.X
+
+		case *DotsType:
+			if v, ok := e.Elem.(*Name); ok && v.Value == "_" {
+				if found {
+					p.errorAt(v.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(_Semi)
+					break loop
+				}
+				
+				e.Elem = x
+				found = true
+			}
+
+		case *AssertExpr:
+			if inner, ok := e.X.(*Name); ok && inner.Value == "_" {
+				if found {
+					p.errorAt(inner.Pos(), "found multiple \"_\" argument in pipe")
+					p.advance(_Semi)
+					break loop
+				}
+				
+				e.X = x
+				found = true
+			}
+			expr = e.X
+
+		default:
+			// Probably a Lit or a Type, so should be the end
+			break loop
+		}
+	}
+
+	if !found {
+		p.errorAt(expr.Pos(), "expected \"_\" argument in pipe")
+		p.advance(_Semi)
+	}
+
+	return y
 }
 
 // callStmt parses call-like statements that can be preceded by 'defer' and 'go'.
